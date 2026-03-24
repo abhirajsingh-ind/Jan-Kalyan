@@ -1459,7 +1459,14 @@
   </div>
 </footer>
 
+<!-- Core Scripts -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+// Supabase Configuration (Anon Key is safe for public reads)
+const SUPABASE_URL = 'https://zfekagbttffcgqbjewoe.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_f2mdiZRw0dKbQe71hWeCZA_Quzfw-Xx';
+const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
 // Counter animation
 function animateCounter(el, target, duration = 1800) {
   let start = 0;
@@ -1708,9 +1715,18 @@ async function handleSearch(overrideQuery) {
   showToast(`Searching for "${q}"...`);
   
   try {
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    const results = await res.json();
-    displaySearchResults(q, results);
+    const query = `%${q}%`;
+    const [schemes, scholarships, fellowships] = await Promise.all([
+      _supabase.from('schemes').select('*').or(`title.ilike.${query},description.ilike.${query}`).order('created_at', { ascending: false }),
+      _supabase.from('scholarships').select('*').or(`title.ilike.${query},institution.ilike.${query}`).order('created_at', { ascending: false }),
+      _supabase.from('fellowships').select('*').or(`title.ilike.${query},institution.ilike.${query}`).order('created_at', { ascending: false })
+    ]);
+
+    displaySearchResults(q, {
+      schemes: schemes.data || [],
+      scholarships: scholarships.data || [],
+      fellowships: fellowships.data || []
+    });
   } catch (err) {
     showToast('Search failed. Please try again.');
   }
@@ -1873,11 +1889,23 @@ async function init() {
 
 async function fetchData(url, callback) {
   try {
-    const res = await fetch(url);
-    const data = await res.json();
-    callback(data);
+    // If running on GitHub Pages or as static, fetch directly from Supabase
+    // Original urls are like '/api/schemes'
+    const tableName = url.split('/').pop(); // 'schemes', 'scholarships', etc.
+    
+    let result;
+    if (tableName === 'search') return; // Search handled separately or needs refactor
+
+    if (tableName === 'news') {
+        result = await _supabase.from('news').select('*').order('date', { ascending: false });
+    } else {
+        result = await _supabase.from(tableName).select('*').order('created_at', { ascending: false });
+    }
+
+    if (result.error) throw result.error;
+    callback(result.data);
   } catch (err) {
-    console.error(`Failed to fetch ${url}`, err);
+    console.error(`Failed to fetch from Supabase:`, err);
   }
 }
 
